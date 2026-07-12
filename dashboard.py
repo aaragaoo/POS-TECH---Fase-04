@@ -5,7 +5,8 @@ Tech Challenge Fase 4 - Pos Tech FIAP (Data Analytics)
 Painel de insights para apoiar a equipe medica na compreensao dos fatores
 associados aos diferentes niveis de obesidade. Nao faz predicao individual
 (isso e feito pelo app preditivo separado) -- aqui o foco e a leitura
-agregada da base de dados.
+agregada da base de dados, em formato executivo (metricas e medias, sem
+graficos estatisticos como boxplot).
 
 Fonte dos dados: ver data_loader.py (hoje = Obesity.csv; depois = API do
 backend, bastando trocar DATA_SOURCE em secrets/env, sem tocar neste
@@ -29,8 +30,37 @@ st.set_page_config(
     layout="wide",
 )
 
-PALETTE = px.colors.sequential.OrRd
 ORDER_LABELS = [OBESITY_LABELS_PT[c] for c in OBESITY_ORDER]
+COLOR_SEQUENCE = px.colors.sequential.Sunset
+
+
+def bar_by_level(data, y_col, label, template, color_sequence):
+    """Grafico de barras com a media de y_col por nivel de obesidade.
+
+    Usado no lugar de boxplot: mais direto de ler para um publico de
+    negocio/medico (uma barra e um numero por nivel, com rotulo visivel).
+    """
+    agg = (
+        data.groupby("Obesity_pt", observed=True)[y_col]
+        .mean()
+        .reindex(ORDER_LABELS)
+        .dropna()
+        .reset_index()
+    )
+    agg.columns = ["Nivel", label]
+    fig = px.bar(
+        agg,
+        x="Nivel",
+        y=label,
+        color="Nivel",
+        category_orders={"Nivel": ORDER_LABELS},
+        color_discrete_sequence=color_sequence,
+        title=f"{label} - media por nivel de obesidade",
+        text_auto=".1f",
+        template=template,
+    )
+    fig.update_layout(showlegend=False, xaxis_title="", yaxis_title=label)
+    return fig
 
 
 # --------------------------------------------------------------------------
@@ -51,6 +81,46 @@ if df_raw.empty:
 
 df_raw["Obesity_pt"] = df_raw["Obesity"].map(OBESITY_LABELS_PT)
 ausentes = missing_columns(df_raw)
+
+# --------------------------------------------------------------------------
+# Aparencia (tema claro/escuro)
+# --------------------------------------------------------------------------
+if "tema" not in st.session_state:
+    st.session_state.tema = "Claro"
+
+st.sidebar.header("Aparencia")
+st.session_state.tema = st.sidebar.radio(
+    "Tema",
+    options=["Claro", "Escuro"],
+    index=["Claro", "Escuro"].index(st.session_state.tema),
+    horizontal=True,
+)
+is_dark = st.session_state.tema == "Escuro"
+plot_template = "plotly_dark" if is_dark else "plotly_white"
+
+if is_dark:
+    st.markdown(
+        """
+        <style>
+        .stApp { background-color: #0e1117; color: #fafafa; }
+        section[data-testid="stSidebar"] { background-color: #161a23; }
+        [data-testid="stMetricValue"] { color: #fafafa; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+        <style>
+        .stApp { background-color: #ffffff; color: #262730; }
+        section[data-testid="stSidebar"] { background-color: #f5f5f5; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.sidebar.divider()
 
 # --------------------------------------------------------------------------
 # Cabecalho
@@ -78,11 +148,22 @@ st.sidebar.header("Filtros")
 genders = sorted(df_raw["Gender"].dropna().unique().tolist()) if "Gender" in df_raw else []
 sel_gender = st.sidebar.multiselect("Genero", genders, default=genders)
 
+sel_age = None
 if "Age" in df_raw.columns and df_raw["Age"].notna().any():
     age_min, age_max = int(df_raw["Age"].min()), int(df_raw["Age"].max())
-    sel_age = st.sidebar.slider("Faixa etaria", age_min, age_max, (age_min, age_max))
-else:
-    sel_age = None
+    st.sidebar.subheader("Idade")
+    st.sidebar.caption("Digite a faixa etaria desejada")
+    col_idade_min, col_idade_max = st.sidebar.columns(2)
+    idade_de = col_idade_min.number_input(
+        "De", min_value=age_min, max_value=age_max, value=age_min, step=1
+    )
+    idade_ate = col_idade_max.number_input(
+        "Ate", min_value=age_min, max_value=age_max, value=age_max, step=1
+    )
+    if idade_de > idade_ate:
+        st.sidebar.warning("'De' maior que 'Ate' -- valores invertidos automaticamente.")
+        idade_de, idade_ate = idade_ate, idade_de
+    sel_age = (idade_de, idade_ate)
 
 present_levels = [c for c in OBESITY_ORDER if c in df_raw["Obesity"].unique().tolist()]
 sel_levels = st.sidebar.multiselect(
@@ -148,8 +229,10 @@ with tab_overview:
             y="Registros",
             color="Nivel",
             category_orders={"Nivel": ORDER_LABELS},
-            color_discrete_sequence=px.colors.sequential.Sunset,
+            color_discrete_sequence=COLOR_SEQUENCE,
             title="Distribuicao dos niveis de obesidade",
+            text_auto=True,
+            template=plot_template,
         )
         fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Pacientes")
         st.plotly_chart(fig, width="stretch")
@@ -162,6 +245,7 @@ with tab_overview:
                 title="Distribuicao por genero",
                 hole=0.45,
                 color_discrete_sequence=px.colors.qualitative.Set2,
+                template=plot_template,
             )
             st.plotly_chart(fig, width="stretch")
 
@@ -179,9 +263,10 @@ with tab_overview:
             y="Percentual",
             color="Obesity_pt",
             category_orders={"Obesity_pt": ORDER_LABELS},
-            color_discrete_sequence=px.colors.sequential.Sunset,
+            color_discrete_sequence=COLOR_SEQUENCE,
             title="Nivel de obesidade por genero (% dentro de cada genero)",
             labels={"Gender": "Genero", "Percentual": "% de pacientes"},
+            template=plot_template,
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -203,17 +288,7 @@ with tab_corpo:
     else:
         c1, c2 = st.columns(2)
         with c1:
-            fig = px.box(
-                df,
-                x="Obesity_pt",
-                y="BMI",
-                color="Obesity_pt",
-                category_orders={"Obesity_pt": ORDER_LABELS},
-                color_discrete_sequence=px.colors.sequential.Sunset,
-                title="IMC por nivel de obesidade",
-                labels={"Obesity_pt": "", "BMI": "IMC (kg/m²)"},
-            )
-            fig.update_layout(showlegend=False)
+            fig = bar_by_level(df, "BMI", "IMC (kg/m²)", plot_template, COLOR_SEQUENCE)
             st.plotly_chart(fig, width="stretch")
 
         with c2:
@@ -223,25 +298,16 @@ with tab_corpo:
                 y="Weight",
                 color="Obesity_pt",
                 category_orders={"Obesity_pt": ORDER_LABELS},
-                color_discrete_sequence=px.colors.sequential.Sunset,
+                color_discrete_sequence=COLOR_SEQUENCE,
                 title="Altura x Peso, colorido por nivel de obesidade",
                 labels={"Height": "Altura (m)", "Weight": "Peso (kg)"},
                 opacity=0.7,
+                template=plot_template,
             )
             st.plotly_chart(fig, width="stretch")
 
     if "Age" in df.columns:
-        fig = px.box(
-            df,
-            x="Obesity_pt",
-            y="Age",
-            color="Obesity_pt",
-            category_orders={"Obesity_pt": ORDER_LABELS},
-            color_discrete_sequence=px.colors.sequential.Sunset,
-            title="Idade por nivel de obesidade",
-            labels={"Obesity_pt": "", "Age": "Idade"},
-        )
-        fig.update_layout(showlegend=False)
+        fig = bar_by_level(df, "Age", "Idade", plot_template, COLOR_SEQUENCE)
         st.plotly_chart(fig, width="stretch")
 
 # ---- Habitos e estilo de vida ------------------------------------------
@@ -283,9 +349,10 @@ with tab_habitos:
             y="Percentual",
             color="Obesity_pt",
             category_orders={"Obesity_pt": ORDER_LABELS, chosen: order} if order else {"Obesity_pt": ORDER_LABELS},
-            color_discrete_sequence=px.colors.sequential.Sunset,
+            color_discrete_sequence=COLOR_SEQUENCE,
             title=f"Nivel de obesidade por: {habit_options[chosen][0]}",
             labels={chosen: "", "Percentual": "% de pacientes"},
+            template=plot_template,
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -302,17 +369,7 @@ with tab_habitos:
         for i, (col, label) in enumerate(num_habits.items()):
             target = c1 if i % 2 == 0 else c2
             with target:
-                fig = px.box(
-                    df,
-                    x="Obesity_pt",
-                    y=col,
-                    color="Obesity_pt",
-                    category_orders={"Obesity_pt": ORDER_LABELS},
-                    color_discrete_sequence=px.colors.sequential.Sunset,
-                    title=label,
-                    labels={"Obesity_pt": "", col: label},
-                )
-                fig.update_layout(showlegend=False)
+                fig = bar_by_level(df, col, label, plot_template, COLOR_SEQUENCE)
                 st.plotly_chart(fig, width="stretch")
 
 # ---- Correlacoes ---------------------------------------------------------
@@ -330,6 +387,7 @@ with tab_correlacao:
             zmin=-1,
             zmax=1,
             title="Correlacao entre variaveis numericas",
+            template=plot_template,
         )
         st.plotly_chart(fig, width="stretch")
         st.markdown(
@@ -350,7 +408,13 @@ with tab_correlacao:
             .count()
             .reset_index(name="Predicoes")
         )
-        fig = px.line(ts, x="created_at", y="Predicoes", title="Volume diario de predicoes registradas na API")
+        fig = px.line(
+            ts,
+            x="created_at",
+            y="Predicoes",
+            title="Volume diario de predicoes registradas na API",
+            template=plot_template,
+        )
         st.plotly_chart(fig, width="stretch")
 
 # ---- Dados -----------------------------------------------------------
