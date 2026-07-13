@@ -32,6 +32,14 @@ st.set_page_config(
 
 ORDER_LABELS = [OBESITY_LABELS_PT[c] for c in OBESITY_ORDER]
 COLOR_SEQUENCE = px.colors.sequential.Sunset
+GENDER_LABELS_PT = {"Female": "Feminino", "Male": "Masculino"}
+BAR_GAP = 0.15
+
+
+def style_bar(fig):
+    """Colunas mais grossas (menos espaco entre barras)."""
+    fig.update_layout(bargap=BAR_GAP, bargroupgap=0.05)
+    return fig
 
 
 def bar_by_level(data, y_col, label, template, color_sequence):
@@ -60,7 +68,7 @@ def bar_by_level(data, y_col, label, template, color_sequence):
         template=template,
     )
     fig.update_layout(showlegend=False, xaxis_title="", yaxis_title=label)
-    return fig
+    return style_bar(fig)
 
 
 # --------------------------------------------------------------------------
@@ -80,6 +88,8 @@ if df_raw.empty:
     st.stop()
 
 df_raw["Obesity_pt"] = df_raw["Obesity"].map(OBESITY_LABELS_PT)
+if "Gender" in df_raw.columns:
+    df_raw["Gender_pt"] = df_raw["Gender"].map(GENDER_LABELS_PT).fillna(df_raw["Gender"])
 ausentes = missing_columns(df_raw)
 
 # --------------------------------------------------------------------------
@@ -104,7 +114,18 @@ if is_dark:
         <style>
         .stApp { background-color: #0e1117; color: #fafafa; }
         section[data-testid="stSidebar"] { background-color: #161a23; }
+
+        /* Contraste dos textos no tema escuro */
+        .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 { color: #fafafa !important; }
+        [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p { color: #fafafa; }
+        [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: #c9d1d9 !important; }
+        [data-testid="stWidgetLabel"] p { color: #fafafa !important; }
         [data-testid="stMetricValue"] { color: #fafafa; }
+        [data-testid="stMetricLabel"] { color: #c9d1d9; }
+        [data-testid="stTabs"] button p { color: #c9d1d9; }
+        [data-testid="stTabs"] button[aria-selected="true"] p { color: #fafafa !important; }
+        section[data-testid="stSidebar"] label p { color: #fafafa !important; }
+        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: #fafafa !important; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -131,9 +152,6 @@ st.caption(
     "aos niveis de obesidade observados na base de dados."
 )
 
-source_badge = "📄 CSV (base de treinamento)" if get_data_source() != "api" else "🔌 API (dados em producao)"
-st.info(f"Fonte de dados atual: **{source_badge}** · {len(df_raw)} registros carregados.")
-
 if ausentes:
     st.caption(
         "⚠️ Esta fonte de dados nao possui as colunas "
@@ -146,7 +164,12 @@ if ausentes:
 st.sidebar.header("Filtros")
 
 genders = sorted(df_raw["Gender"].dropna().unique().tolist()) if "Gender" in df_raw else []
-sel_gender = st.sidebar.multiselect("Genero", genders, default=genders)
+sel_gender = st.sidebar.multiselect(
+    "Genero",
+    genders,
+    default=genders,
+    format_func=lambda g: GENDER_LABELS_PT.get(g, g),
+)
 
 sel_age = None
 if "Age" in df_raw.columns and df_raw["Age"].notna().any():
@@ -188,26 +211,25 @@ if df.empty:
 # --------------------------------------------------------------------------
 # KPIs
 # --------------------------------------------------------------------------
-kpi_cols = st.columns(4)
-kpi_cols[0].metric("Registros analisados", len(df))
+kpi_cols = st.columns(3)
 
 if "Age" in df.columns:
-    kpi_cols[1].metric("Idade media", f"{df['Age'].mean():.1f} anos")
+    kpi_cols[0].metric("Idade media", f"{df['Age'].mean():.1f} anos")
 
 if "family_history" in df.columns:
     pct_hist = (df["family_history"].astype(str).str.lower() == "yes").mean() * 100
-    kpi_cols[2].metric("Com historico familiar", f"{pct_hist:.0f}%")
+    kpi_cols[1].metric("Com historico familiar", f"{pct_hist:.0f}%")
 
 nivel_mais_comum = df["Obesity_pt"].mode().iloc[0] if not df["Obesity_pt"].mode().empty else "-"
-kpi_cols[3].metric("Nivel mais frequente", nivel_mais_comum)
+kpi_cols[2].metric("Nivel mais frequente", nivel_mais_comum)
 
 st.divider()
 
 # --------------------------------------------------------------------------
 # Tabs
 # --------------------------------------------------------------------------
-tab_overview, tab_corpo, tab_habitos, tab_correlacao, tab_dados = st.tabs(
-    ["Visao geral", "Perfil e corpo", "Habitos e estilo de vida", "Correlacoes", "Dados"]
+tab_overview, tab_corpo, tab_habitos = st.tabs(
+    ["Visao geral", "Perfil e corpo", "Habitos e estilo de vida"]
 )
 
 # ---- Visao geral ----------------------------------------------------------
@@ -235,40 +257,41 @@ with tab_overview:
             template=plot_template,
         )
         fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Pacientes")
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(style_bar(fig), width="stretch")
 
     with c2:
-        if "Gender" in df.columns:
+        if "Gender_pt" in df.columns:
             fig = px.pie(
                 df,
-                names="Gender",
+                names="Gender_pt",
                 title="Distribuicao por genero",
                 hole=0.45,
                 color_discrete_sequence=px.colors.qualitative.Set2,
                 template=plot_template,
             )
+            fig.update_layout(legend_title_text="Genero")
             st.plotly_chart(fig, width="stretch")
 
-    if {"Gender", "Obesity_pt"}.issubset(df.columns):
+    if {"Gender_pt", "Obesity_pt"}.issubset(df.columns):
         cross = (
-            df.groupby(["Gender", "Obesity_pt"], observed=True)
+            df.groupby(["Gender_pt", "Obesity_pt"], observed=True)
             .size()
             .reset_index(name="Registros")
         )
-        total_por_genero = cross.groupby("Gender")["Registros"].transform("sum")
+        total_por_genero = cross.groupby("Gender_pt")["Registros"].transform("sum")
         cross["Percentual"] = cross["Registros"] / total_por_genero * 100
         fig = px.bar(
             cross,
-            x="Gender",
+            x="Gender_pt",
             y="Percentual",
             color="Obesity_pt",
             category_orders={"Obesity_pt": ORDER_LABELS},
             color_discrete_sequence=COLOR_SEQUENCE,
             title="Nivel de obesidade por genero (% dentro de cada genero)",
-            labels={"Gender": "Genero", "Percentual": "% de pacientes"},
+            labels={"Gender_pt": "Genero", "Percentual": "% de pacientes"},
             template=plot_template,
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(style_bar(fig), width="stretch")
 
     st.markdown(
         "**Leitura para a equipe medica:** o grafico acima ajuda a identificar "
@@ -354,7 +377,7 @@ with tab_habitos:
             labels={chosen: "", "Percentual": "% de pacientes"},
             template=plot_template,
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(style_bar(fig), width="stretch")
 
     num_habits = {
         "FCVC": "Frequencia no consumo de vegetais",
@@ -371,61 +394,6 @@ with tab_habitos:
             with target:
                 fig = bar_by_level(df, col, label, plot_template, COLOR_SEQUENCE)
                 st.plotly_chart(fig, width="stretch")
-
-# ---- Correlacoes ---------------------------------------------------------
-with tab_correlacao:
-    numeric_cols = [
-        c for c in ["Age", "Height", "Weight", "BMI", "FCVC", "NCP", "CH2O", "FAF", "TUE"]
-        if c in df.columns
-    ]
-    if len(numeric_cols) >= 2:
-        corr = df[numeric_cols].corr(numeric_only=True)
-        fig = px.imshow(
-            corr,
-            text_auto=".2f",
-            color_continuous_scale="RdBu_r",
-            zmin=-1,
-            zmax=1,
-            title="Correlacao entre variaveis numericas",
-            template=plot_template,
-        )
-        st.plotly_chart(fig, width="stretch")
-        st.markdown(
-            "**Leitura para a equipe medica:** valores proximos de +1 ou -1 "
-            "indicam variaveis que se movem juntas (ex.: peso e IMC). Isso "
-            "ajuda a identificar quais fatores de estilo de vida merecem mais "
-            "atencao clinica."
-        )
-    else:
-        st.info("Nao ha colunas numericas suficientes para calcular correlacoes.")
-
-    if get_data_source() == "api" and "created_at" in df_raw.columns:
-        st.subheader("Predicoes ao longo do tempo")
-        ts = (
-            df_raw.dropna(subset=["created_at"])
-            .set_index("created_at")
-            .resample("D")["Obesity"]
-            .count()
-            .reset_index(name="Predicoes")
-        )
-        fig = px.line(
-            ts,
-            x="created_at",
-            y="Predicoes",
-            title="Volume diario de predicoes registradas na API",
-            template=plot_template,
-        )
-        st.plotly_chart(fig, width="stretch")
-
-# ---- Dados -----------------------------------------------------------
-with tab_dados:
-    st.dataframe(df, width="stretch", height=500)
-    st.download_button(
-        "Baixar dados filtrados (CSV)",
-        data=df.to_csv(index=False).encode("utf-8"),
-        file_name="obesidade_filtrado.csv",
-        mime="text/csv",
-    )
 
 st.divider()
 st.caption(
