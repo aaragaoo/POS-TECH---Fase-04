@@ -114,6 +114,8 @@ if is_dark:
         <style>
         .stApp { background-color: #0e1117; color: #fafafa; }
         section[data-testid="stSidebar"] { background-color: #161a23; }
+        [data-testid="stHeader"] { background-color: #0e1117; }
+        [data-testid="stAppViewBlockContainer"] { background-color: #0e1117; }
 
         /* Contraste dos textos no tema escuro */
         .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 { color: #fafafa !important; }
@@ -257,7 +259,7 @@ with tab_overview:
             template=plot_template,
         )
         fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Pacientes")
-        st.plotly_chart(style_bar(fig), width="stretch")
+        st.plotly_chart(style_bar(fig), width="stretch", theme=None)
 
     with c2:
         if "Gender_pt" in df.columns:
@@ -270,7 +272,7 @@ with tab_overview:
                 template=plot_template,
             )
             fig.update_layout(legend_title_text="Genero")
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, width="stretch", theme=None)
 
     if {"Gender_pt", "Obesity_pt"}.issubset(df.columns):
         cross = (
@@ -291,7 +293,7 @@ with tab_overview:
             labels={"Gender_pt": "Genero", "Percentual": "% de pacientes"},
             template=plot_template,
         )
-        st.plotly_chart(style_bar(fig), width="stretch")
+        st.plotly_chart(style_bar(fig), width="stretch", theme=None)
 
     st.markdown(
         "**Leitura para a equipe medica:** o grafico acima ajuda a identificar "
@@ -312,7 +314,7 @@ with tab_corpo:
         c1, c2 = st.columns(2)
         with c1:
             fig = bar_by_level(df, "BMI", "IMC (kg/m²)", plot_template, COLOR_SEQUENCE)
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, width="stretch", theme=None)
 
         with c2:
             fig = px.scatter(
@@ -327,11 +329,11 @@ with tab_corpo:
                 opacity=0.7,
                 template=plot_template,
             )
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, width="stretch", theme=None)
 
     if "Age" in df.columns:
         fig = bar_by_level(df, "Age", "Idade", plot_template, COLOR_SEQUENCE)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, width="stretch", theme=None)
 
 # ---- Habitos e estilo de vida ------------------------------------------
 with tab_habitos:
@@ -377,7 +379,7 @@ with tab_habitos:
             labels={chosen: "", "Percentual": "% de pacientes"},
             template=plot_template,
         )
-        st.plotly_chart(style_bar(fig), width="stretch")
+        st.plotly_chart(style_bar(fig), width="stretch", theme=None)
 
     num_habits = {
         "FCVC": "Frequencia no consumo de vegetais",
@@ -393,7 +395,7 @@ with tab_habitos:
             target = c1 if i % 2 == 0 else c2
             with target:
                 fig = bar_by_level(df, col, label, plot_template, COLOR_SEQUENCE)
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, width="stretch", theme=None)
 
 st.divider()
 st.caption(
