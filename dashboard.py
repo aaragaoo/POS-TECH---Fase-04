@@ -36,10 +36,35 @@ GENDER_LABELS_PT = {"Female": "Feminino", "Male": "Masculino"}
 BAR_GAP = 0.15
 
 
+def apply_theme(fig):
+    """Forca cores explicitas de fundo/fonte do grafico conforme o tema
+    selecionado (nao depende so do 'template' do plotly, que pode nao ser
+    respeitado pelo componente de renderizacao)."""
+    if is_dark:
+        fig.update_layout(
+            paper_bgcolor="#0e1117",
+            plot_bgcolor="#0e1117",
+            font_color="#fafafa",
+            legend=dict(font=dict(color="#fafafa")),
+            title_font_color="#fafafa",
+            hoverlabel=dict(bgcolor="#161a23", font_color="#fafafa"),
+        )
+        fig.update_xaxes(gridcolor="#30363d", linecolor="#30363d", zerolinecolor="#30363d")
+        fig.update_yaxes(gridcolor="#30363d", linecolor="#30363d", zerolinecolor="#30363d")
+    else:
+        fig.update_layout(
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+            font_color="#262730",
+            title_font_color="#262730",
+        )
+    return fig
+
+
 def style_bar(fig):
     """Colunas mais grossas (menos espaco entre barras)."""
     fig.update_layout(bargap=BAR_GAP, bargroupgap=0.05)
-    return fig
+    return apply_theme(fig)
 
 
 def bar_by_level(data, y_col, label, template, color_sequence):
@@ -272,7 +297,7 @@ with tab_overview:
                 template=plot_template,
             )
             fig.update_layout(legend_title_text="Genero")
-            st.plotly_chart(fig, width="stretch", theme=None)
+            st.plotly_chart(apply_theme(fig), width="stretch", theme=None)
 
     if {"Gender_pt", "Obesity_pt"}.issubset(df.columns):
         cross = (
@@ -329,7 +354,7 @@ with tab_corpo:
                 opacity=0.7,
                 template=plot_template,
             )
-            st.plotly_chart(fig, width="stretch", theme=None)
+            st.plotly_chart(apply_theme(fig), width="stretch", theme=None)
 
     if "Age" in df.columns:
         fig = bar_by_level(df, "Age", "Idade", plot_template, COLOR_SEQUENCE)
