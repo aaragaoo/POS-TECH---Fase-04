@@ -65,6 +65,8 @@ API_FIELD_MAP = {
     "alimentos_calorico": "FAVC",
     "meio_transporte": "MTRANS",
     "obesity": "Obesity",
+    "fuma": "SMOKE",
+    "monitora_calorias": "SCC",
 }
 
 _CAEC_CALC_NORMALIZE = {
@@ -84,7 +86,7 @@ _MTRANS_NORMALIZE = {
 }
 
 # Colunas que so existem no CSV de treinamento (a API nao coleta/retorna)
-CSV_ONLY_COLUMNS = ["Height", "Weight", "SMOKE", "SCC"]
+CSV_ONLY_COLUMNS = ["Height", "Weight"]
 # Colunas que so existem quando os dados vem da API (log de predicoes)
 API_ONLY_COLUMNS = ["id", "created_at"]
 
@@ -140,7 +142,7 @@ def _load_from_api() -> pd.DataFrame:
         normalized = df["MTRANS"].astype(str).str.lower().map(_MTRANS_NORMALIZE)
         df["MTRANS"] = normalized.fillna(df["MTRANS"])
 
-    for col in ["family_history", "FAVC"]:
+    for col in ["family_history", "FAVC", "SMOKE", "SCC"]:
         if col in df.columns:
             df[col] = df[col].astype(str).str.lower()
 
