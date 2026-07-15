@@ -27,30 +27,39 @@ streamlit run dashboard.py
 
 Abre em `http://localhost:8501`.
 
-## Fonte de dados: CSV agora, API depois
+## Fonte de dados: CSV ou API
 
 O painel nunca le o CSV nem chama a API diretamente em `dashboard.py` — tudo
 passa por `data_loader.load_obesity_data()`, que decide a fonte a partir de
 `DATA_SOURCE`:
 
-- **Hoje** (`DATA_SOURCE=csv`, padrao): le `Obesity.csv`, a base de
-  treinamento do modelo.
-- **Quando o backend estiver pronto** (`DATA_SOURCE=api`): consome
-  `GET /api/v1/obesity-records` do backend. O dashboard detecta
-  automaticamente quais colunas a fonte atual fornece e oculta as secoes
-  que dependem de dados ausentes.
+- **`DATA_SOURCE=csv`** (padrao quando nao ha secrets configurados): le
+  `Obesity.csv`, a base de treinamento do modelo.
+- **`DATA_SOURCE=api`** (o painel ao vivo ja usa esse modo): consome
+  `GET /api/v1/obesity-records` do backend
+  (`https://backend-ml-obesity.onrender.com`), com os registros reais das
+  predicoes feitas pelo app. O dashboard detecta automaticamente quais
+  colunas a fonte atual fornece e oculta as secoes que dependem de dados
+  ausentes (hoje, a API nao retorna altura/peso, entao IMC e o grafico
+  altura x peso ficam ocultos).
 
-Para trocar a fonte quando o backend estiver no ar:
+Para rodar localmente contra a API em vez do CSV:
 
-1. Copie `.streamlit/secrets.toml.example` para `.streamlit/secrets.toml`
-   (local) ou cole os valores em *App settings → Secrets* no Streamlit
-   Cloud.
+1. Copie `.streamlit/secrets.toml.example` para `.streamlit/secrets.toml`.
 2. Ajuste:
    ```toml
    DATA_SOURCE = "api"
-   API_BASE_URL = "https://SEU-BACKEND.onrender.com"
+   API_BASE_URL = "https://backend-ml-obesity.onrender.com"
    ```
-3. Reinicie/redeploy o app. Nenhuma alteracao de codigo e necessaria.
+3. Reinicie o app (`streamlit run dashboard.py`). Nenhuma alteracao de
+   codigo e necessaria.
+
+No Streamlit Cloud, os mesmos valores ficam em *App settings → Secrets* do
+app publicado.
+
+Obs.: o backend fica no plano gratuito do Render e hiberna por inatividade
+— a primeira consulta depois de um tempo parado pode demorar ~20-30s para
+"acordar" o servico.
 
 ## Conteudo do painel
 
