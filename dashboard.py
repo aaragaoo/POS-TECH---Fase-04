@@ -67,11 +67,49 @@ def style_bar(fig):
     return apply_theme(fig)
 
 
+# Niveis considerados "obesidade" propriamente dita (exclui abaixo do peso,
+# peso normal e sobrepeso), usados nos insights de concentracao por grupo.
+SEVERE_LABELS = ORDER_LABELS[4:]
+
+
+def trend_insight(agg, label):
+    """Frase curta comparando o primeiro e o ultimo nivel presentes no
+    grafico, para dar contexto rapido sem exigir leitura detalhada."""
+    if len(agg) < 2:
+        return None
+    first, last = agg.iloc[0], agg.iloc[-1]
+    delta = last[label] - first[label]
+    if abs(delta) < 0.05:
+        return f"{label} se mantem estavel entre os niveis (~{first[label]:.1f})."
+    direcao = "sobe" if delta > 0 else "cai"
+    return (
+        f"{label} {direcao} de {first[label]:.1f} ({first['Nivel']}) "
+        f"para {last[label]:.1f} ({last['Nivel']})."
+    )
+
+
+def severe_share_insight(cross, group_col):
+    """% de cada categoria (genero, habito, etc.) classificada em algum
+    nivel de obesidade (I a III), para destacar disparidades entre grupos."""
+    severe = cross[cross["Obesity_pt"].isin(SEVERE_LABELS)]
+    if severe.empty:
+        return None
+    share = severe.groupby(group_col)["Percentual"].sum().sort_values(ascending=False)
+    if share.empty:
+        return None
+    if len(share) == 1:
+        cat = share.index[0]
+        return f"{share.iloc[0]:.0f}% dos pacientes de '{cat}' estao em algum nivel de obesidade (I a III)."
+    partes = " · ".join(f"{cat}: {pct:.0f}%" for cat, pct in share.items())
+    return f"Em algum nivel de obesidade (I a III) — {partes}."
+
+
 def bar_by_level(data, y_col, label, template, color_sequence):
     """Grafico de barras com a media de y_col por nivel de obesidade.
 
     Usado no lugar de boxplot: mais direto de ler para um publico de
     negocio/medico (uma barra e um numero por nivel, com rotulo visivel).
+    Retorna (figura, insight) para exibir um descritivo logo abaixo.
     """
     agg = (
         data.groupby("Obesity_pt", observed=True)[y_col]
@@ -93,7 +131,7 @@ def bar_by_level(data, y_col, label, template, color_sequence):
         template=template,
     )
     fig.update_layout(showlegend=False, xaxis_title="", yaxis_title=label)
-    return style_bar(fig)
+    return style_bar(fig), trend_insight(agg, label)
 
 
 # --------------------------------------------------------------------------
@@ -285,6 +323,9 @@ with tab_overview:
         )
         fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Pacientes")
         st.plotly_chart(style_bar(fig), width="stretch", theme=None)
+        top_row = dist.loc[dist["Registros"].idxmax()]
+        pct_top = top_row["Registros"] / dist["Registros"].sum() * 100
+        st.caption(f"Nivel mais frequente: **{top_row['Nivel']}** ({pct_top:.0f}% da base filtrada).")
 
     with c2:
         if "Gender_pt" in df.columns:
@@ -298,6 +339,10 @@ with tab_overview:
             )
             fig.update_layout(legend_title_text="Genero")
             st.plotly_chart(apply_theme(fig), width="stretch", theme=None)
+            gender_counts = df["Gender_pt"].value_counts()
+            top_gender = gender_counts.idxmax()
+            pct_gender = gender_counts.max() / gender_counts.sum() * 100
+            st.caption(f"**{top_gender}** representa {pct_gender:.0f}% da base filtrada.")
 
     if {"Gender_pt", "Obesity_pt"}.issubset(df.columns):
         cross = (
@@ -319,6 +364,9 @@ with tab_overview:
             template=plot_template,
         )
         st.plotly_chart(style_bar(fig), width="stretch", theme=None)
+        insight_cross = severe_share_insight(cross, "Gender_pt")
+        if insight_cross:
+            st.caption(insight_cross)
 
     st.markdown(
         "**Leitura para a equipe medica:** o grafico acima ajuda a identificar "
@@ -338,8 +386,10 @@ with tab_corpo:
     else:
         c1, c2 = st.columns(2)
         with c1:
-            fig = bar_by_level(df, "BMI", "IMC (kg/m²)", plot_template, COLOR_SEQUENCE)
+            fig, insight_imc = bar_by_level(df, "BMI", "IMC (kg/m²)", plot_template, COLOR_SEQUENCE)
             st.plotly_chart(fig, width="stretch", theme=None)
+            if insight_imc:
+                st.caption(insight_imc)
 
         with c2:
             fig = px.scatter(
@@ -355,10 +405,24 @@ with tab_corpo:
                 template=plot_template,
             )
             st.plotly_chart(apply_theme(fig), width="stretch", theme=None)
+            peso_por_nivel = (
+                df.groupby("Obesity_pt", observed=True)["Weight"]
+                .mean()
+                .reindex(ORDER_LABELS)
+                .dropna()
+            )
+            if len(peso_por_nivel) >= 2:
+                st.caption(
+                    f"Peso medio sobe de {peso_por_nivel.iloc[0]:.0f} kg ({peso_por_nivel.index[0]}) "
+                    f"para {peso_por_nivel.iloc[-1]:.0f} kg ({peso_por_nivel.index[-1]}), para "
+                    "alturas semelhantes entre os niveis."
+                )
 
     if "Age" in df.columns:
-        fig = bar_by_level(df, "Age", "Idade", plot_template, COLOR_SEQUENCE)
+        fig, insight_idade = bar_by_level(df, "Age", "Idade", plot_template, COLOR_SEQUENCE)
         st.plotly_chart(fig, width="stretch", theme=None)
+        if insight_idade:
+            st.caption(insight_idade)
 
 # ---- Habitos e estilo de vida ------------------------------------------
 with tab_habitos:
@@ -405,6 +469,9 @@ with tab_habitos:
             template=plot_template,
         )
         st.plotly_chart(style_bar(fig), width="stretch", theme=None)
+        insight_habito = severe_share_insight(cross, chosen)
+        if insight_habito:
+            st.caption(insight_habito)
 
     num_habits = {
         "FCVC": "Frequencia no consumo de vegetais",
@@ -419,8 +486,10 @@ with tab_habitos:
         for i, (col, label) in enumerate(num_habits.items()):
             target = c1 if i % 2 == 0 else c2
             with target:
-                fig = bar_by_level(df, col, label, plot_template, COLOR_SEQUENCE)
+                fig, insight_habit_num = bar_by_level(df, col, label, plot_template, COLOR_SEQUENCE)
                 st.plotly_chart(fig, width="stretch", theme=None)
+                if insight_habit_num:
+                    st.caption(insight_habit_num)
 
 st.divider()
 st.caption(
