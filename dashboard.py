@@ -78,8 +78,9 @@ def label_outside(fig):
         cliponaxis=False,
     )
     # Espaco extra no topo para o rotulo da barra mais alta nao ser cortado
-    # pela margem da figura.
-    fig.update_layout(margin=dict(t=60))
+    # pela margem da figura (titulo do grafico + rotulo, os dois competem
+    # pelo mesmo espaco quando a barra mais alta chega perto do topo).
+    fig.update_layout(margin=dict(t=80, b=40))
     fig.update_yaxes(automargin=True)
     valores = [
         v
@@ -89,7 +90,7 @@ def label_outside(fig):
         if v is not None
     ]
     if valores:
-        fig.update_yaxes(range=[0, max(valores) * 1.18])
+        fig.update_yaxes(range=[0, max(valores) * 1.3])
     return fig
 
 
