@@ -77,6 +77,19 @@ def label_outside(fig):
         textfont_size=13,
         cliponaxis=False,
     )
+    # Espaco extra no topo para o rotulo da barra mais alta nao ser cortado
+    # pela margem da figura.
+    fig.update_layout(margin=dict(t=60))
+    fig.update_yaxes(automargin=True)
+    valores = [
+        v
+        for trace in fig.data
+        if trace.type == "bar" and trace.y is not None
+        for v in trace.y
+        if v is not None
+    ]
+    if valores:
+        fig.update_yaxes(range=[0, max(valores) * 1.18])
     return fig
 
 
