@@ -422,8 +422,14 @@ with tab_overview:
                         title=f"Nivel de obesidade - {genero}",
                         labels={"Obesity_pt": "", "Percentual": "% de pacientes"},
                         template=plot_template,
+                        text="Percentual",
                     )
-                    fig.update_traces(text=[f"{v:.0f}%" for v in sub["Percentual"]])
+                    # texttemplate (nao uma lista fixa) para que cada trace pegue o
+                    # proprio valor -- color="Obesity_pt" quebra a figura em uma
+                    # trace por nivel, entao uma lista unica aplicada via
+                    # update_traces(text=[...]) era repetida (sempre o 1o valor)
+                    # em todas as barras.
+                    fig.update_traces(texttemplate="%{text:.0f}%")
                     fig.update_layout(showlegend=True, legend_title_text="Nivel", xaxis_title="")
                     st.plotly_chart(label_outside(style_bar(fig)), width="stretch", theme=None)
 
@@ -530,8 +536,12 @@ with tab_habitos:
             title=f"Nivel de obesidade por: {habit_options[chosen][0]}",
             labels={chosen: "", "Percentual": "% de pacientes"},
             template=plot_template,
+            text="Percentual",
         )
-        fig.update_traces(text=[f"{v:.0f}%" for v in cross["Percentual"]])
+        # texttemplate em vez de lista fixa: com color="Obesity_pt" a figura vira
+        # varias traces (uma por nivel) e uma lista unica aplicada via
+        # update_traces(text=[...]) nao respeita o alinhamento por barra.
+        fig.update_traces(texttemplate="%{text:.0f}%")
         st.plotly_chart(label_inside(style_bar(fig)), width="stretch", theme=None)
         insight_habito = severe_share_insight(cross, chosen)
         if insight_habito:
