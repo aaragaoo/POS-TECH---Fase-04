@@ -33,7 +33,7 @@ st.set_page_config(
 ORDER_LABELS = [OBESITY_LABELS_PT[c] for c in OBESITY_ORDER]
 COLOR_SEQUENCE = px.colors.sequential.Sunset
 GENDER_LABELS_PT = {"Female": "Feminino", "Male": "Masculino"}
-BAR_GAP = 0.15
+BAR_GAP = 0.08
 
 
 def apply_theme(fig):
@@ -65,6 +65,31 @@ def style_bar(fig):
     """Colunas mais grossas (menos espaco entre barras)."""
     fig.update_layout(bargap=BAR_GAP, bargroupgap=0.05)
     return apply_theme(fig)
+
+
+def label_outside(fig):
+    """Rotulo de dados maior e fora da barra -- para graficos com uma
+    barra por categoria (sem empilhamento), onde nao ha risco de
+    sobreposicao entre rotulos."""
+    fig.update_traces(
+        selector=dict(type="bar"),
+        textposition="outside",
+        textfont_size=13,
+        cliponaxis=False,
+    )
+    return fig
+
+
+def label_inside(fig):
+    """Rotulo de dados maior dentro da barra -- para graficos empilhados
+    (varios segmentos por categoria), onde 'outside' causaria
+    sobreposicao entre os rotulos dos segmentos."""
+    fig.update_traces(
+        selector=dict(type="bar"),
+        textposition="inside",
+        insidetextfont=dict(size=12, color="#ffffff"),
+    )
+    return fig
 
 
 # Niveis considerados "obesidade" propriamente dita (exclui abaixo do peso,
@@ -131,7 +156,7 @@ def bar_by_level(data, y_col, label, template, color_sequence):
         template=template,
     )
     fig.update_layout(showlegend=False, xaxis_title="", yaxis_title=label)
-    return style_bar(fig), trend_insight(agg, label)
+    return label_outside(style_bar(fig)), trend_insight(agg, label)
 
 
 # --------------------------------------------------------------------------
@@ -310,39 +335,47 @@ with tab_overview:
             .reset_index()
         )
         dist.columns = ["Nivel", "Registros"]
+        total_dist = dist["Registros"].sum()
+        dist["NivelPct"] = dist.apply(
+            lambda r: f"{r['Nivel']} ({r['Registros'] / total_dist * 100:.0f}%)", axis=1
+        )
         fig = px.bar(
             dist,
             x="Nivel",
             y="Registros",
-            color="Nivel",
-            category_orders={"Nivel": ORDER_LABELS},
+            color="NivelPct",
+            category_orders={"NivelPct": dist["NivelPct"].tolist()},
             color_discrete_sequence=COLOR_SEQUENCE,
             title="Distribuicao dos niveis de obesidade",
             text_auto=True,
             template=plot_template,
         )
-        fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Pacientes")
-        st.plotly_chart(style_bar(fig), width="stretch", theme=None)
+        fig.update_layout(showlegend=True, legend_title_text="Nivel (% da base)", xaxis_title="", yaxis_title="Pacientes")
+        st.plotly_chart(label_outside(style_bar(fig)), width="stretch", theme=None)
         top_row = dist.loc[dist["Registros"].idxmax()]
-        pct_top = top_row["Registros"] / dist["Registros"].sum() * 100
+        pct_top = top_row["Registros"] / total_dist * 100
         st.caption(f"Nivel mais frequente: **{top_row['Nivel']}** ({pct_top:.0f}% da base filtrada).")
 
     with c2:
         if "Gender_pt" in df.columns:
+            gender_counts = df["Gender_pt"].value_counts()
+            gender_pct = (gender_counts / gender_counts.sum() * 100).round(0).astype(int)
+            df_pie = df.copy()
+            df_pie["Genero_pct"] = df_pie["Gender_pt"].map(
+                lambda g: f"{g} ({gender_pct[g]}%)"
+            )
             fig = px.pie(
-                df,
-                names="Gender_pt",
+                df_pie,
+                names="Genero_pct",
                 title="Distribuicao por genero",
                 hole=0.45,
                 color_discrete_sequence=px.colors.qualitative.Set2,
                 template=plot_template,
             )
-            fig.update_layout(legend_title_text="Genero")
+            fig.update_layout(legend_title_text="Genero (% da base)")
             st.plotly_chart(apply_theme(fig), width="stretch", theme=None)
-            gender_counts = df["Gender_pt"].value_counts()
             top_gender = gender_counts.idxmax()
-            pct_gender = gender_counts.max() / gender_counts.sum() * 100
-            st.caption(f"**{top_gender}** representa {pct_gender:.0f}% da base filtrada.")
+            st.caption(f"**{top_gender}** representa {gender_pct[top_gender]}% da base filtrada.")
 
     if {"Gender_pt", "Obesity_pt"}.issubset(df.columns):
         cross = (
@@ -352,24 +385,40 @@ with tab_overview:
         )
         total_por_genero = cross.groupby("Gender_pt")["Registros"].transform("sum")
         cross["Percentual"] = cross["Registros"] / total_por_genero * 100
-        fig = px.bar(
-            cross,
-            x="Gender_pt",
-            y="Percentual",
-            color="Obesity_pt",
-            category_orders={"Obesity_pt": ORDER_LABELS},
-            color_discrete_sequence=COLOR_SEQUENCE,
-            title="Nivel de obesidade por genero (% dentro de cada genero)",
-            labels={"Gender_pt": "Genero", "Percentual": "% de pacientes"},
-            template=plot_template,
-        )
-        st.plotly_chart(style_bar(fig), width="stretch", theme=None)
+
+        generos_presentes = [g for g in ("Feminino", "Masculino") if g in cross["Gender_pt"].unique()]
+        if generos_presentes:
+            gcols = st.columns(len(generos_presentes))
+            for gcol, genero in zip(gcols, generos_presentes):
+                with gcol:
+                    sub = (
+                        cross[cross["Gender_pt"] == genero]
+                        .set_index("Obesity_pt")
+                        .reindex(ORDER_LABELS)
+                        .reset_index()
+                    )
+                    sub["Percentual"] = sub["Percentual"].fillna(0)
+                    fig = px.bar(
+                        sub,
+                        x="Obesity_pt",
+                        y="Percentual",
+                        color="Obesity_pt",
+                        category_orders={"Obesity_pt": ORDER_LABELS},
+                        color_discrete_sequence=COLOR_SEQUENCE,
+                        title=f"Nivel de obesidade - {genero}",
+                        labels={"Obesity_pt": "", "Percentual": "% de pacientes"},
+                        template=plot_template,
+                    )
+                    fig.update_traces(text=[f"{v:.0f}%" for v in sub["Percentual"]])
+                    fig.update_layout(showlegend=True, legend_title_text="Nivel", xaxis_title="")
+                    st.plotly_chart(label_outside(style_bar(fig)), width="stretch", theme=None)
+
         insight_cross = severe_share_insight(cross, "Gender_pt")
         if insight_cross:
             st.caption(insight_cross)
 
     st.markdown(
-        "**Leitura para a equipe medica:** o grafico acima ajuda a identificar "
+        "**Leitura para a equipe medica:** os graficos acima ajudam a identificar "
         "se algum genero esta desproporcionalmente concentrado em niveis mais "
         "altos de obesidade, o que pode orientar campanhas de triagem "
         "direcionadas."
@@ -468,7 +517,8 @@ with tab_habitos:
             labels={chosen: "", "Percentual": "% de pacientes"},
             template=plot_template,
         )
-        st.plotly_chart(style_bar(fig), width="stretch", theme=None)
+        fig.update_traces(text=[f"{v:.0f}%" for v in cross["Percentual"]])
+        st.plotly_chart(label_inside(style_bar(fig)), width="stretch", theme=None)
         insight_habito = severe_share_insight(cross, chosen)
         if insight_habito:
             st.caption(insight_habito)
